@@ -18,7 +18,9 @@ export default class Server {
     createXudClient() {
         const cert = fs.readFileSync(this.config.xud.rpccert);
         const credential = grpc.credentials.createSsl(cert);
-        return new XudClient(`${this.config.xud.rpchost}:${this.config.xud.rpcport}`, credential);
+        const address = `${this.config.xud.rpchost}:${this.config.xud.rpcport}`;
+        console.log("Try to connect to Xud gRPC interface: " + address)
+        return new XudClient(address, credential);
     }
 
     public start() {
