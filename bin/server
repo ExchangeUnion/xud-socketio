@@ -1,0 +1,8 @@
+#!/usr/bin/env node
+
+const Server = require("../dist").Server;
+const ServerConfig = require("../dist").ServerConfig;
+
+const config = new ServerConfig()
+const server = new Server(config)
+server.start()
