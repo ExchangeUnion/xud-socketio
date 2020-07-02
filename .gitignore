@@ -1,7 +1,6 @@
 public/
 dist/
 node_modules/
-src/proto
 tls.cert
 yarn.lock
 yarn-error.log
