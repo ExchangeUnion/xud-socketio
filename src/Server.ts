@@ -20,7 +20,11 @@ export default class Server {
         const credential = grpc.credentials.createSsl(cert);
         const address = `${this.config.xud.rpchost}:${this.config.xud.rpcport}`;
         console.log("Try to connect to Xud gRPC interface: " + address)
-        return new XudClient(address, credential);
+        const options = {
+            'grpc.ssl_target_name_override': 'localhost',
+            'grpc.default_authority': 'localhost',
+        }
+        return new XudClient(address, credential, options);
     }
 
     public start() {
