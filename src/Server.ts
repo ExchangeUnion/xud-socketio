@@ -49,7 +49,9 @@ export default class Server {
 
         let http = require("http").Server(app);
 
-        let io = socketio(http);
+        let io = socketio(http, {
+            path: "/api-ws"
+        });
 
         app.use(express.static("public"))
 
@@ -57,12 +59,19 @@ export default class Server {
         const orderManager = new OrderManager(xudClient, io);
         orderManager.start()
 
-        app.get("/api/orders/:pair", function (req, res) {
+        app.get("/api/orders/:pair", (req, res) => {
+            res.setHeader('Content-Type', 'application/json');
             res.send(JSON.stringify(orderManager.snapshot(req.params.pair)))
         })
 
-        app.get("/api/pairs", function (req, res) {
+        app.get("/api/pairs", (req, res) => {
+            res.setHeader('Content-Type', 'application/json');
             res.send(JSON.stringify(orderManager.pairs))
+        })
+
+        app.get("/api/info", (req, res) => {
+            res.setHeader('Content-Type', 'application/json');
+            res.send(JSON.stringify(orderManager.info))
         })
 
         http.listen(8080, () => {

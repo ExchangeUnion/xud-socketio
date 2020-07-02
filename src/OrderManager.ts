@@ -24,6 +24,13 @@ class Owner {
     alias?: string;
 }
 
+class BasicInfo {
+    version: string;
+    network: string;
+    nodePubKey: string;
+    nodeAlias: string;
+}
+
 class Order implements Hashable {
     id: string;
     price: BigDecimal;
@@ -85,6 +92,7 @@ export default class OrderManager {
     private readonly io: socketio.Server;
     private readonly orders: { [key: string]: OrderBook };
     private readonly ready: Promise<void>;
+    private basicInfo: BasicInfo;
 
     constructor(xudClient: XudClient, io: socketio.Server) {
         this.xudClient = xudClient;
@@ -95,8 +103,12 @@ export default class OrderManager {
 
     private async init(): Promise<void> {
         const info = await this.getInfo();
-        const version = info.version;
-        const pairsCount = info.numPairs;
+        const basicInfo = new BasicInfo();
+        basicInfo.version = info.version;
+        basicInfo.network = info.network;
+        basicInfo.nodePubKey = info.nodePubKey;
+        basicInfo.nodeAlias = info.alias;
+        this.basicInfo = basicInfo;
         const pairs = await this.listPairs();
         pairs.pairsList.forEach((pair) => this.addPair(pair));
 
@@ -247,6 +259,10 @@ export default class OrderManager {
 
     get pairs(): Array<string> {
         return Object.keys(this.orders)
+    }
+
+    get info(): BasicInfo {
+        return this.basicInfo;
     }
 
     private normalizePair(pairId: string) {
