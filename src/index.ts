@@ -35,9 +35,7 @@ app.get("/api/pairs", function (req, res) {
 http.listen(8080, () => {
     console.log("listen on 127.0.0.1:8080");
     io.on("connection", (socket) => {
+        // TODO add logging framework
         console.log("a user connected");
-        socket.emit("welcome", "test!!!");
-        socket.join("r/orders/ltc_btc");
-        socket.join("r/orders/eth_btc");
     });
 });
