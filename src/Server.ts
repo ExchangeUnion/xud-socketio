@@ -5,7 +5,12 @@ import * as grpc from "grpc";
 import {XudClient} from './proto/xudrpc_grpc_pb';
 import OrderManager from "./OrderManager";
 import ServerConfig from "./ServerConfig";
+import * as moment from "moment";
 
+
+function delay(ms: number) {
+    return new Promise( resolve => setTimeout(resolve, ms) );
+}
 
 export default class Server {
 
@@ -15,7 +20,7 @@ export default class Server {
         this.config = config
     }
 
-    createXudClient() {
+    async createXudClient(): Promise<XudClient> {
         const cert = fs.readFileSync(this.config.xud.rpccert);
         const credential = grpc.credentials.createSsl(cert);
         const address = `${this.config.xud.rpchost}:${this.config.xud.rpcport}`;
@@ -24,10 +29,21 @@ export default class Server {
             'grpc.ssl_target_name_override': 'localhost',
             'grpc.default_authority': 'localhost',
         }
-        return new XudClient(address, credential, options);
+        const client = new XudClient(address, credential, options);
+        const deadline = moment(new Date()).add(3, 's').toDate()
+        await new Promise((resolve, reject) => {
+            client.waitForReady(deadline, (error) => {
+                if (error) {
+                    reject(error)
+                } else {
+                    resolve()
+                }
+            })
+        });
+        return client
     }
 
-    public start() {
+    public async start() {
         const app = express();
         app.set("port", process.env.PORT || 8080);
 
@@ -37,7 +53,7 @@ export default class Server {
 
         app.use(express.static("public"))
 
-        const xudClient = this.createXudClient();
+        const xudClient = await this.createXudClient();
         const orderManager = new OrderManager(xudClient, io);
         orderManager.start()
 
