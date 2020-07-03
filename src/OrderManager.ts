@@ -196,7 +196,15 @@ export default class OrderManager {
 
     private async pollOrders() {
         while (true) {
-            const orders = await this.listOrders();
+            let orders
+            try {
+                orders = await this.listOrders();
+            } catch (e) {
+                console.log("Failed to fetch orders: " + e)
+                await delay(5000)
+                continue
+            }
+
             console.log("listOrders result is", orders)
             orders.ordersMap.forEach(([key, value]) => {
                 const pair = this.normalizePair(key);
