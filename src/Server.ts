@@ -56,6 +56,7 @@ export default class Server {
         app.use(express.static("public"))
 
         const xudClient = await this.createXudClient();
+        console.log("xudClient is created")
         const orderManager = new OrderManager(xudClient, io);
         orderManager.start()
 

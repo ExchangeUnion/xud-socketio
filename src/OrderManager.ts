@@ -102,7 +102,16 @@ export default class OrderManager {
     }
 
     private async init(): Promise<void> {
-        const info = await this.getInfo();
+        let info;
+        while (true) {
+            try {
+                info = await this.getInfo();
+                break;
+            } catch (e) {
+                console.log("Wait for xud to be ready: " + e)
+            }
+            await delay(3000);
+        }
         const basicInfo = new BasicInfo();
         basicInfo.version = info.version;
         basicInfo.network = info.network;
