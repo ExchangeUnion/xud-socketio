@@ -6,6 +6,7 @@ import {XudClient} from './proto/xudrpc_grpc_pb';
 import OrderManager from "./OrderManager";
 import ServerConfig from "./ServerConfig";
 import * as moment from "moment";
+import {Request} from "express";
 
 
 function delay(ms: number) {
@@ -62,7 +63,13 @@ export default class Server {
 
         app.get("/api/orders/:pair", (req, res) => {
             res.setHeader('Content-Type', 'application/json');
-            res.send(JSON.stringify(orderManager.snapshot(req.params.pair)))
+            let spread: string
+            if (req.query.spread) {
+                spread = req.query.spread as string;
+            } else {
+                spread = "1e-8"
+            }
+            res.send(JSON.stringify(orderManager.snapshot(req.params.pair, spread)))
         })
 
         app.get("/api/pairs", (req, res) => {
