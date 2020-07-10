@@ -8,95 +8,58 @@ import {
     SubscribeOrdersRequest,
     ListPairsRequest,
     ListPairsResponse,
-    Order as _Order,
     Orders,
 } from "./proto/xudrpc_pb";
 import * as grpc from "grpc";
-import BigDecimal from "./BigDecimal";
-import HashSet, {Hashable} from "./HashSet";
+import * as winston from "winston";
+import {BasicInfo, OrderBook} from "./domain";
+
 
 function delay(ms: number) {
     return new Promise( resolve => setTimeout(resolve, ms) );
-}
-
-class Owner {
-    nodePubKey: string;
-    alias?: string;
-}
-
-class Order implements Hashable {
-    id: string;
-    price: BigDecimal;
-    amount: BigDecimal;
-    owner: Owner;
-
-    public static from(source: _Order.AsObject): Order {
-        const target = new Order();
-        target.id = source.id;
-        target.price = new BigDecimal(source.price.toString());
-        target.amount = new BigDecimal(source.quantity.toString()).div(100000000);
-        const owner = new Owner()
-        owner.nodePubKey = source.nodeIdentifier.nodePubKey
-        owner.alias = source.nodeIdentifier.alias
-        target.owner = owner
-        return target;
-    }
-
-    constructor(id?: string, price?: BigDecimal, amount?: BigDecimal, owner?: Owner) {
-        this.id = id;
-        this.price = price;
-        this.amount = amount;
-        this.owner = owner;
-    }
-
-    public static comparator(order1: Order, order2: Order): number {
-        return order1.price.cmp(order2.price);
-    }
-
-    hashCode(): string {
-        return this.id;
-    }
-
-}
-
-class OrderBook {
-    version: number;
-    asks: Array<Order>;
-    bids: Array<Order>;
-
-    constructor(version?: number, asks?: Array<Order>, bids?: Array<Order>) {
-        this.version = version || 0
-        this.asks = asks || []
-        this.bids = bids || []
-    }
-
-    public static from(source: Orders.AsObject): OrderBook {
-        const target = new OrderBook();
-        target.version = null;
-        target.asks = source.sellOrdersList.map(item => Order.from(item)) || [];
-        target.bids = source.buyOrdersList.map(item => Order.from(item)) || [];
-        return target
-    }
 }
 
 export default class OrderManager {
 
     private readonly xudClient: XudClient;
     private readonly io: socketio.Server;
-    private readonly orders: { [key: string]: OrderBook };
+    private readonly books: { [key: string]: OrderBook };
     private readonly ready: Promise<void>;
+    private basicInfo: BasicInfo;
+    private logger: winston.Logger;
 
     constructor(xudClient: XudClient, io: socketio.Server) {
         this.xudClient = xudClient;
         this.io = io;
-        this.orders = {};
+        this.books = {};
         this.ready = this.init();
+        this.logger = winston.createLogger({
+            transports: [
+                new winston.transports.Console({
+                    level: "debug",
+                    format: winston.format.printf(info => `${info.message}`)
+                })
+            ]
+        })
     }
 
     private async init(): Promise<void> {
-        const info = await this.getInfo();
-        const version = info.version;
-        const pairsCount = info.numPairs;
+        let info;
+        while (true) {
+            try {
+                info = await this.getInfo();
+                break;
+            } catch (e) {
+                this.logger.debug("Wait for xud to be ready: " + e)
+            }
+            await delay(3000);
+        }
+        const basicInfo = new BasicInfo();
+        basicInfo.version = info.version;
+        basicInfo.network = info.network;
+        basicInfo.nodePubKey = info.nodePubKey;
+        basicInfo.nodeAlias = info.alias;
+        this.basicInfo = basicInfo;
         const pairs = await this.listPairs();
         pairs.pairsList.forEach((pair) => this.addPair(pair));
 
@@ -104,11 +67,11 @@ export default class OrderManager {
     }
 
     private addPair(pair: string) {
-        if (pair in this.orders) {
+        if (pair in this.books) {
             return
         }
         pair = this.normalizePair(pair)
-        this.orders[pair] = new OrderBook();
+        this.books[pair] = new OrderBook();
     }
 
     private async getInfo(): Promise<GetInfoResponse.AsObject> {
@@ -148,48 +111,41 @@ export default class OrderManager {
         }));
     }
 
-    private diffOrders(orders1: Array<Order>, orders2: Array<Order>): Array<Order> {
-        const s1 = new HashSet(orders1);
-        const s2 = new HashSet(orders2);
-
-        let removed = Array.from(s1.difference(s1));
-        let added = Array.from(s2.difference(s1));
-        let changed = Array.from(s2.intersection(s1));
-
-        return [
-            ...removed.map(i => new Order(i.id, i.price, new BigDecimal("0"), i.owner)),
-            ...added.map(i => new Order(i.id, i.price, i.amount, i.owner)),
-            ...changed.map(i => new Order(i.id, i.price, i.amount, i.owner)),
-        ].sort(Order.comparator)
-    }
-
-    private diffOrderBook(oldBook: OrderBook, newBook: OrderBook): OrderBook | null {
-        const diff = new OrderBook(oldBook.version + 1,
-            this.diffOrders(oldBook.asks, newBook.asks),
-            this.diffOrders(oldBook.bids, newBook.bids))
-        if (diff.asks.length === 0 && diff.bids.length === 0) {
-            return null
-        }
-        return diff
+    private ordersToString(orders: Orders.AsObject): string {
+        let result = "\n"
+        orders.buyOrdersList.forEach(i => {
+            result += `- ${i.price} ${i.quantity}\n`;
+        })
+        orders.sellOrdersList.forEach(i => {
+            result += `- ${i.price} ${i.quantity}\n`;
+        })
+        return result;
     }
 
     private async pollOrders() {
         while (true) {
-            const orders = await this.listOrders();
-            console.log("listOrders result is", orders)
+            let orders
+            try {
+                orders = await this.listOrders();
+            } catch (e) {
+                this.logger.debug("Failed to fetch orders: " + e)
+                await delay(5000)
+                continue
+            }
+
             orders.ordersMap.forEach(([key, value]) => {
                 const pair = this.normalizePair(key);
+
                 let book: OrderBook;
-                if (pair in this.orders) {
-                    book = this.orders[pair];
+                if (pair in this.books) {
+                    book = this.books[pair];
                 } else {
                     book = new OrderBook();
-                    this.orders[pair] = book;
+                    this.books[pair] = book;
                 }
-                console.log("current order book is", pair, book)
-                const newBook = OrderBook.from(value)
-                const diff = this.diffOrderBook(book, newBook);
-                this.printOrderBook(diff)
+                const newBook = OrderBook.from(value).merged("1e-8")
+                const diff = book.diff(newBook);
+                this.logger.debug(`[${pair}] current ${book.toString()} new ${newBook.toString()} diff ${diff}`)
                 if (diff != null) {
                     book.version = diff.version;
                     book.asks = newBook.asks;
@@ -200,25 +156,6 @@ export default class OrderManager {
             });
             await delay(5000)
         }
-    }
-
-    private printOrderBook(book: OrderBook, snapshot: boolean = true) {
-        if (book) {
-            console.log("----------OrderBook (Delta)----------")
-            console.log("VERSION:", book.version)
-            console.log("ASKS:")
-            book.asks.forEach(i => {
-                console.log(i.price.toString(), i.amount.toString())
-            })
-            console.log("BIDS:")
-            book.bids.forEach(i => {
-                console.log(i.price.toString(), i.amount.toString())
-            })
-            console.log("------------------------------------")
-        } else {
-            console.log("Empty OrderBook")
-        }
-
     }
 
     private eventKey(pair: string) {
@@ -241,12 +178,16 @@ export default class OrderManager {
         // TODO cancel subscription when OrderManager destroyed
     }
 
-    public snapshot(pair: string): OrderBook {
-        return this.orders[pair];
+    public snapshot(pair: string, spread: string): OrderBook {
+        return this.books[pair].merged(spread)
     }
 
     get pairs(): Array<string> {
-        return Object.keys(this.orders)
+        return Object.keys(this.books)
+    }
+
+    get info(): BasicInfo {
+        return this.basicInfo;
     }
 
     private normalizePair(pairId: string) {
