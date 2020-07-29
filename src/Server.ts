@@ -58,7 +58,7 @@ export default class Server {
 
         const xudClient = await this.createXudClient();
         console.log("xudClient is created")
-        const orderManager = new OrderManager(xudClient, io);
+        const orderManager = new OrderManager(xudClient, io, this.config.pairs.weight);
         orderManager.start()
 
         app.get("/api/orders/:pair", (req, res) => {
