@@ -41,13 +41,20 @@ export default class ServerConfig {
         this.xud.rpccert = argv.xud.rpccert
 
         this.pairs.weight = {}
+        let value = ""
         try {
-            for (const part of argv["pairs.weight"].split(",")) {
-                const [pair, weight] = part.trim().split(":")
-                this.pairs.weight[pair] = weight
+            value = argv.pairs.weight || ""
+        } catch (e) {}
+        value = value.trim()
+        try {
+            if (value.length > 0) {
+                for (const part of value.split(",")) {
+                    const [pair, weight] = part.trim().split(":")
+                    this.pairs.weight[pair] = parseInt(weight)
+                }
             }
         } catch (error) {
-            throw new Error("Failed to parse --pairs.weight value: " + argv["pairs.weight"])
+            throw new Error("Failed to parse --pairs.weight value: " + value)
         }
     }
 }
