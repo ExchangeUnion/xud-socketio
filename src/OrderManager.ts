@@ -23,14 +23,16 @@ export default class OrderManager {
 
     private readonly xudClient: XudClient;
     private readonly io: socketio.Server;
+    private readonly pairs_weight: {[key: string]: number}
     private readonly books: { [key: string]: OrderBook };
     private readonly ready: Promise<void>;
     private basicInfo: BasicInfo;
     private logger: winston.Logger;
 
-    constructor(xudClient: XudClient, io: socketio.Server) {
+    constructor(xudClient: XudClient, io: socketio.Server, pairs_weight: {[key: string]: number}) {
         this.xudClient = xudClient;
         this.io = io;
+        this.pairs_weight = pairs_weight
         this.books = {};
         this.ready = this.init();
         this.logger = winston.createLogger({
@@ -183,7 +185,13 @@ export default class OrderManager {
     }
 
     get pairs(): Array<string> {
-        return Object.keys(this.books)
+        let pairs = Object.keys(this.books)
+        pairs.sort((a: string, b: string) => {
+            let w1 = this.pairs_weight[a] || 0
+            let w2 = this.pairs_weight[b] || 0
+            return w2 - w1
+        })
+        return pairs
     }
 
     get info(): BasicInfo {
